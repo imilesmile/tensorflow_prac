@@ -18,3 +18,5 @@ target/
 *.zip
 venv/
 .DS_Store
+.idea/
+vcs.xml
