@@ -30,11 +30,9 @@ def load_data_and_labels(positive_data_file, negative_data_file):
     negative_examples = [s.strip() for s in negative_examples]
 
     x_text = positive_examples + negative_examples
-    print (x_text)
     x_text = [clean_str(sent) for sent in x_text]
 
     positive_labels = [[0, 1] for _ in positive_examples]
-    print (positive_labels)
     negative_labels = [[1, 0] for _ in negative_examples]
     y = np.concatenate([positive_labels, negative_labels])
     return [x_text, y]

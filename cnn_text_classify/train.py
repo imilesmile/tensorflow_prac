@@ -36,31 +36,31 @@ tf.flags.DEFINE_boolean("log_device_placement", False, "Log placement of ops on 
 
 FLAGS = tf.flags.FLAGS
 
-FLAGS._parse_flags()
-print ("\nParameters: ")
-for attr, value in sorted(FLAGS._flags.items()):
-    print ("{}={}".format(attr.upper(), value))
-print ("")
+# FLAGS._parse_flags()
+# print ("\nParameters: ")
+# for attr, value in sorted(FLAGS._flags.items()):
+#     print ("{}={}".format(attr.upper(), value))
+# print ("")
 
 print ("loading data...")
 x_text, y = data_helpers.load_data_and_labels(FLAGS.positive_data_file, FLAGS.negative_data_file)
-
 # build vacab
 max_document_length = max([len(x.split(" ")) for x in x_text])
+
 # 将样本生成one hot形式
 vocab_processor = learn.preprocessing.VocabularyProcessor(max_document_length)
 x = np.array(list(vocab_processor.fit_transform(x_text)))
 
 # random shuffle
 np.random.seed(10)
-shuffle_indices = np.random.permutation(np.array(len(y)))
+shuffle_indices = np.random.permutation(np.arange(len(y)))
 x_shuffled = x[shuffle_indices]
 y_shuffled = y[shuffle_indices]
 
 # split train/test set
 dev_sample_index = -1 * int(FLAGS.dev_sample_percentage * float(len(y)))
 x_train, x_dev = x_shuffled[:dev_sample_index], x_shuffled[dev_sample_index]
-y_train, y_dev = y_shuffled[:dev_sample_index], y_shuffled[dev_sample_index:]
+y_train, y_dev = y_shuffled[:dev_sample_index], y_shuffled[dev_sample_index]
 
 del x, y, x_shuffled, y_shuffled
 
@@ -84,7 +84,7 @@ with tf.Graph().as_default():
             l2_reg_lambda=FLAGS.l2_reg_lambda)
 
         # define training procedure
-        global_step = tf.Variable(0, name="global step", trainable=False)
+        global_step = tf.Variable(0, name="global_step", trainable=False)
         optimizer = tf.train.AdamOptimizer(1e-3)
         grads_and_vars = optimizer.compute_gradients(cnn.loss)
         # train_op, 一个计算loss并应用梯度的操作
@@ -120,7 +120,7 @@ with tf.Graph().as_default():
         train_summary_dir = os.path.join(out_dir, "summaries", "train")
         train_summary_writer = tf.summary.FileWriter(train_summary_dir, sess.graph)
 
-        # dev summaries
+        # Dev summaries
         dev_summary_op = tf.summary.merge([loss_summary, acc_summary])
         dev_summary_dir = os.path.join(out_dir, "summaries", "dev")
         dev_summary_writer = tf.summary.FileWriter(dev_summary_dir, sess.graph)
@@ -159,12 +159,13 @@ with tf.Graph().as_default():
             Evaluates model on a dev set
             """
             feed_dict = {
-                cnn.input_x: x_batch,
-                cnn.input_y: y_batch,
-                cnn.dropout_keep_prob: 1.0
+              cnn.input_x: x_batch,
+              cnn.input_y: y_batch,
+              cnn.dropout_keep_prob: 1.0
             }
             step, summaries, loss, accuracy = sess.run(
-                [global_step, dev_summary_op, cnn.loss, cnn.accuracy], feed_dict)
+                [global_step, dev_summary_op, cnn.loss, cnn.accuracy],
+                feed_dict)
             time_str = datetime.datetime.now().isoformat()
             print("{}: step {}, loss {:g}, acc {:g}".format(time_str, step, loss, accuracy))
             if writer:
@@ -173,8 +174,7 @@ with tf.Graph().as_default():
 
         # generate batches
         batches = data_helpers.batch_iter(
-            list(zip(x_train, y_train), FLAGS.batch_size, FLAGS.num_epochs)
-        )
+            list(zip(x_train, y_train)), FLAGS.batch_size, FLAGS.num_epochs)
 
         # training loop, for each batch
         for batch in batches:
