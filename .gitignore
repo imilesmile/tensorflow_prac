@@ -1,0 +1,20 @@
+# Created by .ignore support plugin (hsz.mobi)
+.gitignore
+*.tar.gz
+*.bak
+*.classpath
+*.settings
+*.project
+*.cache-main
+*.cache-tests
+*.qicf_replaced
+dependency-reduced-pom.xml
+.idea
+*.iml
+target/
+/.project
+/.pydevproject
+*.pyc
+*.zip
+venv/
+.DS_Store
