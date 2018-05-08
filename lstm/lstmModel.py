@@ -22,7 +22,7 @@ FLAGS = flags.FLAGS
 class TitleConfig(object):
     vocab_size = 10000
     batch_size = 128
-    num_steps = 30
+    num_steps = 300
     init_scale = 0.05
     lr = 1.0
     lr_decay = 0.5
@@ -173,7 +173,7 @@ def create_model(model_creator, config, file_path, is_training, is_infer, scope)
     with graph.as_default(), tf.container(scope):
         dataset = tf.data.TextLineDataset(file_path)
         if is_infer:
-            iterator = data_iterator.get_iterator(dataset, config.batch_size, config.num_steps)
+            iterator = data_iterator.infer_iterator(dataset, config.batch_size, config.num_steps)
         else:
             iterator = data_iterator.get_iterator(dataset, config.batch_size, config.num_steps)
         model = model_creator(is_training=is_training, config=config, iterator=iterator)
@@ -223,79 +223,33 @@ def run_epoch(sess, model, eval_op=None, verbose=False):
             perplexity = np.exp(costs / iters)
             print("  step: %d, perplexity: %.3f" % (step, perplexity))
             sys.stdout.flush()
-
     return sess.run(model.global_step), np.exp(costs / iters)
 
-def infer_pooling(sess, model, eval_op=None, verbose=False):
-    costs = 0.0
-    iters = 0
-    batch_size = model.batch_size
+
+def infer_pooling(sess, model):
+    print ("infer pooling")
+    poolings = []
     state = sess.run(model.initial_state)
     feed_dict = {}
     for i, (c, h) in enumerate(model.initial_state):
         feed_dict[c] = state[i].c
         feed_dict[h] = state[i].h
-    fetches = {"cost": model.cost, "predict_count": model.predict_count}
-    if eval_op is not None:
-        fetches["eval_op"] = eval_op
     step = 0
     while True:
         try:
-            vals = sess.run(fetches, feed_dict)
+            polling = sess.run(model.norm_pooling, feed_dict)
+            for row in polling:
+                format_row = ",".join([str(_) for _ in row])
+                poolings.append(format_row)
         except tf.errors.OutOfRangeError:
             print("Finished this epoch")
             break
-        cost = vals['cost'] * batch_size
-        predict_count = vals['predict_count']
-        costs += cost
-        iters += predict_count
         step += 1
         if step % 100 == 0:
-            perplexity = np.exp(costs / iters)
-            print("  step: %d, perplexity: %.3f" % (step, perplexity))
+            print("  step: %d : " % (step))
             sys.stdout.flush()
+    return poolings
 
-    return sess.run(model.global_step), np.exp(costs / iters)
-
-# def infer_pooling(sess, model):
-#
-#    print "infer pooling"
-#    poolings = []
-#    for step in range(model.input.epoch_size):
-#        state = sess.run(model.initial_state)
-#        feed_dict = {}
-#        for i, (c, h) in enumerate(model.initial_state):
-#            feed_dict[c] = state[i].c
-#            feed_dict[h] = state[i].h
-#        polling = sess.run(model.norm_pooling, feed_dict)
-#        for row in polling:
-#            format_row = ",".join([str(_) for _ in row])
-#            poolings.append(format_row)
-#        if step % (model.input.epoch_size // 10) == 10:
-#            progress = step * 1.0 / model.input.epoch_size
-#            print("progress: %.3f" % progress)
-#            sys.stdout.flush()
-#    return poolings
-#
-# def infer_hidden_output(sess, model):
-#
-#    print "infer hidden output"
-#    outputs = []
-#    for step in range(model.input.epoch_size):
-#        state = sess.run(model.initial_state)
-#        feed_dict = {}
-#        for i, (c, h) in enumerate(model.initial_state):
-#            feed_dict[c] = state[i].c
-#            feed_dict[h] = state[i].h
-#        output = sess.run(model.norm_hidden_output, feed_dict)
-#        for row in output:
-#            format_row = ",".join([str(_) for _ in row])
-#            outputs.append(format_row)
-#        if step % (model.input.epoch_size // 10) == 10:
-#            progress = step * 1.0 / model.input.epoch_size
-#            print("progress: %.3f" % progress)
-#            sys.stdout.flush()
-#    return outputs
 
 def main(_):
     print ("train_path: ", FLAGS.train_path)
@@ -306,7 +260,6 @@ def main(_):
     print ("config: ", FLAGS.config)
 
     train_config = TitleConfig() if FLAGS.config == "title" else ClickConfig()
-    train_config = TitleConfig() if FLAGS.config == "title" else ClickConfig()
     infer_config = TitleConfig() if FLAGS.config == "title" else ClickConfig()
     test_config = TitleConfig() if FLAGS.config == "title" else ClickConfig()
     test_config.batch_size = 1
@@ -314,7 +267,9 @@ def main(_):
 
     config_proto = tf.ConfigProto(log_device_placement=False, allow_soft_placement=True)
     if FLAGS.infer_path:
-        infer_model = create_model(SeqModel, infer_config, FLAGS.infer_path, False, True, 'infer')
+        print ("infer")
+        infer_file_path = FLAGS.train_path + "/infer"
+        infer_model = create_model(SeqModel, infer_config, infer_file_path, True, True, 'infer')
         infer_sess = tf.Session(target='', config=config_proto, graph=infer_model.graph)
     else:
         train_file_path = FLAGS.train_path + "/train"
@@ -322,16 +277,25 @@ def main(_):
         test_file_path = FLAGS.train_path + "/test"
         train_model = create_model(SeqModel, train_config, train_file_path, True, False, 'train')
         valid_model = create_model(SeqModel, train_config, valid_file_path, False, False, 'valid')
-        test_model = create_model(SeqModel, test_config, valid_file_path, False, False, 'test')
+        test_model = create_model(SeqModel, test_config, test_file_path, False, False, 'test')
         train_sess = tf.Session(target='', config=config_proto, graph=train_model.graph)
         valid_sess = tf.Session(target='', config=config_proto, graph=valid_model.graph)
         test_sess = tf.Session(target='', config=config_proto, graph=test_model.graph)
 
     if FLAGS.infer_path:
-        #### infer progress
-        pass
+        ## infer progress
+        with infer_model.graph.as_default():
+            loaded_train_model, global_step = create_or_load_model(infer_model.model, FLAGS.model_path, infer_sess,
+                                                                   "train")
+            infer_sess.run(infer_model.iterator.initializer)
+            embeddings = infer_pooling(infer_sess, loaded_train_model)
+            print (len(embeddings))
+            # with open(FLAGS.out_embedding, "w") as f:
+            #     for idx in range(len(embeddings)):
+            #         ss = embeddings[idx] + "\n"
+            #         f.write(ss)
     else:
-        #### training progress
+        ## training progress
         with train_model.graph.as_default():
             loaded_train_model, global_step = create_or_load_model(
                 train_model.model, FLAGS.model_path, train_sess, "train")
@@ -361,11 +325,14 @@ def main(_):
         print("Test Perplexity: %.3f" % test_perplexity)
         # save softmax weights
         softmaxs = []
-        softmax = train_sess.run(train_model.norm_softmax_w)
+        with train_model.graph.as_default():
+            loaded_train_model, global_step = create_or_load_model(train_model.model, FLAGS.model_path, train_sess,
+                                                                   "train")
+            softmax = train_sess.run(loaded_train_model.norm_softmax_w)
         for col in softmax.T:
             format_col = ",".join([str(_) for _ in col])
             softmaxs.append(format_col)
-        with open(FLAGS.out_softmax, 'w') as f:
+        with open("./out_embedding", 'w') as f:
             for idx in range(len(softmaxs)):
                 ss = str(idx) + "\t" + softmaxs[idx] + "\n"
                 f.write(ss)
