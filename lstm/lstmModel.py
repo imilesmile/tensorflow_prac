@@ -34,7 +34,6 @@ class TitleConfig(object):
     embedding_size = 128
     max_epoch = 5
 
-
 class ClickConfig(object):
     vocab_size = 40000
     batch_size = 256
@@ -49,7 +48,6 @@ class ClickConfig(object):
     hidden_size = 128
     embedding_size = 128
     max_epoch = 5
-
 
 class SeqModel(object):
     def __init__(self, is_training, config, iterator):
@@ -92,15 +90,15 @@ class SeqModel(object):
                                                 masks,
                                                 average_across_timesteps=False,
                                                 average_across_batch=True)
+
         self._cost = tf.reduce_sum(loss)
         self._predict_count = tf.reduce_sum(iterator.source_len)
         self._final_state = self.state
         self.global_step = tf.Variable(0, trainable=False)
         self.saver = tf.train.Saver(tf.global_variables())
-
+        self._source_id = iterator.source_id
         if not is_training:
             return
-
         self._lr = tf.Variable(0.0, trainable=False)
         tvars = tf.trainable_variables()
         grads, _ = tf.clip_by_global_norm(tf.gradients(self._cost, tvars), config.max_grad_norm)
@@ -162,6 +160,10 @@ class SeqModel(object):
     @property
     def norm_softmax_w(self):
         return self._norm_softmax_w
+
+    @property
+    def source_id(self):
+        return self._source_id
 
 
 class Model(namedtuple("Model", ("graph", "model", "iterator"))):
@@ -237,9 +239,10 @@ def infer_pooling(sess, model):
     step = 0
     while True:
         try:
+            source_ids = sess.run(model.source_id)
             polling = sess.run(model.norm_pooling, feed_dict)
-            for row in polling:
-                format_row = ",".join([str(_) for _ in row])
+            for row in range(len(polling)):
+                format_row = ("%s\t%s") % (source_ids[row], ",".join([str(_) for _ in polling[row]]))
                 poolings.append(format_row)
         except tf.errors.OutOfRangeError:
             print("Finished this epoch")
@@ -269,7 +272,7 @@ def main(_):
     if FLAGS.infer_path:
         print ("infer")
         infer_file_path = FLAGS.train_path + "/infer"
-        infer_model = create_model(SeqModel, infer_config, infer_file_path, True, True, 'infer')
+        infer_model = create_model(SeqModel, infer_config, infer_file_path, False, True, 'infer')
         infer_sess = tf.Session(target='', config=config_proto, graph=infer_model.graph)
     else:
         train_file_path = FLAGS.train_path + "/train"
@@ -289,11 +292,11 @@ def main(_):
                                                                    "train")
             infer_sess.run(infer_model.iterator.initializer)
             embeddings = infer_pooling(infer_sess, loaded_train_model)
-            print (len(embeddings))
-            # with open(FLAGS.out_embedding, "w") as f:
-            #     for idx in range(len(embeddings)):
-            #         ss = embeddings[idx] + "\n"
-            #         f.write(ss)
+            print (embeddings)
+            with open("./out_embedding", "w") as f:
+                for idx in range(len(embeddings)):
+                    ss = embeddings[idx] + "\n"
+                    f.write(ss)
     else:
         ## training progress
         with train_model.graph.as_default():
@@ -332,7 +335,7 @@ def main(_):
         for col in softmax.T:
             format_col = ",".join([str(_) for _ in col])
             softmaxs.append(format_col)
-        with open("./out_embedding", 'w') as f:
+        with open(FLAGS.out_softmax, 'w') as f:
             for idx in range(len(softmaxs)):
                 ss = str(idx) + "\t" + softmaxs[idx] + "\n"
                 f.write(ss)
