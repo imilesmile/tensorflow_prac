@@ -3,8 +3,9 @@ import tensorflow as tf
 
 
 class BatchedInput(collections.namedtuple(
-    "BatchedInput", ("initializer", "source_id","source", "target", "source_len"))):
+    "BatchedInput", ("initializer", "source_id", "source", "target", "source_len"))):
     pass
+
 
 def get_iterator(raw_data, batch_size, num_steps):
     output_buffer_size = batch_size * 100
@@ -24,7 +25,8 @@ def get_iterator(raw_data, batch_size, num_steps):
     batched_iter = batch_data.make_initializable_iterator()
     (source, target, source_len) = batched_iter.get_next()
 
-    return BatchedInput(initializer=batched_iter.initializer, source_id=None, source=source, target=target, source_len=source_len)
+    return BatchedInput(initializer=batched_iter.initializer, source_id=None, source=source, target=target,
+                        source_len=source_len)
 
 
 def infer_iterator(raw_data, batch_size, num_steps):
@@ -44,11 +46,11 @@ def infer_iterator(raw_data, batch_size, num_steps):
     source_target_data = source_data.map(
         lambda x, y: (x, y[:tf.size(y) - 1], y[1:], tf.size(y) - 1), batch_size)
     batch = source_target_data.batch(batch_size).filter(
-            lambda x, y, z, s: tf.equal(tf.shape(x)[0], batch_size))
+        lambda x, y, z, s: tf.equal(tf.shape(x)[0], batch_size))
     batched_iter = batch.make_initializable_iterator()
     (source_id, source, target, source_len) = batched_iter.get_next()
     return BatchedInput(initializer=batched_iter.initializer,
-                      source_id=source_id, source=source, target=target, source_len=source_len)
+                        source_id=source_id, source=source, target=target, source_len=source_len)
 
 
 if __name__ == '__main__':
