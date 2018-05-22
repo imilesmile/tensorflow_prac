@@ -31,22 +31,21 @@ def get_iterator(raw_data, batch_size, num_steps):
 
 def infer_iterator(raw_data, batch_size, num_steps):
     output_buffer_size = batch_size * 100
-    source_data = raw_data.shuffle(output_buffer_size, reshuffle_each_iteration=True)
-    source_data = source_data.map(
+    source_data = raw_data.map(
         lambda src: (tf.string_split([src], '\t').values[0],
                      tf.string_split([src], '\t').values[1]),
         num_parallel_calls=4).prefetch(output_buffer_size)
     source_data = source_data.map(
-        lambda x, y: (x, tf.string_split([y], ',').values), num_parallel_calls=4).prefetch(output_buffer_size)
+        lambda idx, seq: (idx, tf.string_split([seq], ',').values), num_parallel_calls=4).prefetch(output_buffer_size)
     source_data = source_data.map(
-        lambda x, y: (x, tf.string_to_number(y, tf.int32)),
+        lambda idx, seq: (idx, tf.string_to_number(seq, tf.int32)),
         num_parallel_calls=4).prefetch(output_buffer_size)
     source_data = source_data.map(
-        lambda x, y: (x, y[:num_steps + 1]), num_parallel_calls=4).prefetch(output_buffer_size)
+        lambda idx, seq: (idx, seq[:num_steps + 1]), num_parallel_calls=4).prefetch(output_buffer_size)
     source_target_data = source_data.map(
-        lambda x, y: (x, y[:tf.size(y) - 1], y[1:], tf.size(y) - 1), batch_size)
+        lambda idx, seq: (idx, seq[:tf.size(seq) - 1], seq[1:], tf.size(seq) - 1), batch_size)
     batch = source_target_data.batch(batch_size).filter(
-        lambda x, y, z, s: tf.equal(tf.shape(x)[0], batch_size))
+        lambda idx, seq, target, s: tf.equal(tf.shape(idx)[0], batch_size))
     batched_iter = batch.make_initializable_iterator()
     (source_id, source, target, source_len) = batched_iter.get_next()
     return BatchedInput(initializer=batched_iter.initializer,
@@ -65,7 +64,7 @@ if __name__ == '__main__':
         raw_data = dataset
         raw_data_train = dataset_train
         batch_size = 12
-        num_steps = 3
+        num_steps = 30
         output_buffer_size = batch_size * 100
         source_data = raw_data.shuffle(output_buffer_size, reshuffle_each_iteration=True)
 

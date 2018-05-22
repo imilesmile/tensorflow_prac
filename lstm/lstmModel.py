@@ -34,6 +34,7 @@ class TitleConfig(object):
     embedding_size = 128
     max_epoch = 5
 
+
 class ClickConfig(object):
     vocab_size = 40000
     batch_size = 256
@@ -49,6 +50,7 @@ class ClickConfig(object):
     embedding_size = 128
     max_epoch = 5
 
+
 class SeqModel(object):
     def __init__(self, is_training, config, iterator):
         self._is_training = is_training
@@ -63,9 +65,9 @@ class SeqModel(object):
         initializer = tf.random_uniform_initializer(-config.init_scale, config.init_scale)
         tf.get_variable_scope().set_initializer(initializer)
 
-        with tf.device("/cpu:0"):
-            self.embedding = tf.get_variable("embedding", [vocab_size, embedding_size], dtype=tf.float32)
-            self.inputs = tf.nn.embedding_lookup(self.embedding, iterator.source)
+        # with tf.device("/cpu:0"):
+        self.embedding = tf.get_variable("embedding", [vocab_size, embedding_size], dtype=tf.float32)
+        self.inputs = tf.nn.embedding_lookup(self.embedding, iterator.source)
         if is_training and config.keep_prob < 1:
             self.inputs = tf.nn.dropout(self.inputs, config.keep_prob)
         self.output, self.state = self._build_rnn_graph(self.inputs, iterator.source_len)
@@ -206,7 +208,7 @@ def run_epoch(sess, model, eval_op=None, verbose=False):
     for i, (c, h) in enumerate(model.initial_state):
         feed_dict[c] = state[i].c
         feed_dict[h] = state[i].h
-    fetches = {"cost": model.cost, "predict_count": model.predict_count}
+    fetches = {"cost": model.cost, "predict_count": model.predict_count, "softmax_w":model.softmax_w}
     if eval_op is not None:
         fetches["eval_op"] = eval_op
     step = 0
@@ -221,6 +223,7 @@ def run_epoch(sess, model, eval_op=None, verbose=False):
         costs += cost
         iters += predict_count
         step += 1
+        print (vals['softmax_w'])
         if step % 100 == 0:
             perplexity = np.exp(costs / iters)
             print("  step: %d, perplexity: %.3f" % (step, perplexity))
@@ -239,8 +242,7 @@ def infer_pooling(sess, model):
     step = 0
     while True:
         try:
-            source_ids = sess.run(model.source_id)
-            polling = sess.run(model.norm_pooling, feed_dict)
+            source_ids, polling = sess.run([model.source_id, model.norm_pooling], feed_dict)
             for row in range(len(polling)):
                 format_row = ("%s\t%s") % (source_ids[row], ",".join([str(_) for _ in polling[row]]))
                 poolings.append(format_row)
@@ -292,8 +294,7 @@ def main(_):
                                                                    "train")
             infer_sess.run(infer_model.iterator.initializer)
             embeddings = infer_pooling(infer_sess, loaded_train_model)
-            print (embeddings)
-            with open("./out_embedding", "w") as f:
+            with open(FLAGS.out_embedding, "w") as f:
                 for idx in range(len(embeddings)):
                     ss = embeddings[idx] + "\n"
                     f.write(ss)
