@@ -103,7 +103,6 @@ class SeqModel(object):
         self._norm_softmax_w = tf.nn.l2_normalize(self.softmax_w, dim=0)
         logits = tf.nn.xw_plus_b(reshape_output, self.softmax_w, self.softmax_b)
         logits = tf.reshape(logits, [self.batch_size, self.num_steps, vocab_size])
-        loss = tf.nn.nce_loss(self.softmax_w, self.softmax_b, input_.y,)
         loss = tf.contrib.seq2seq.sequence_loss(logits,
                                                 input_.y,
                                                 tf.ones([self.batch_size, self.num_steps], dtype=tf.float32),
