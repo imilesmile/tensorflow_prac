@@ -43,8 +43,8 @@ class TitleConfig(object):
 
 
 class ClickConfig(object):
-    vocab_size = 40000
-    batch_size = 256
+    vocab_size = 1000001
+    batch_size = 25
     num_steps = 30
     init_scale = 0.05
     lr = 1.0
@@ -103,6 +103,7 @@ class SeqModel(object):
         self._norm_softmax_w = tf.nn.l2_normalize(self.softmax_w, dim=0)
         logits = tf.nn.xw_plus_b(reshape_output, self.softmax_w, self.softmax_b)
         logits = tf.reshape(logits, [self.batch_size, self.num_steps, vocab_size])
+        loss = tf.nn.nce_loss(self.softmax_w, self.softmax_b, input_.y,)
         loss = tf.contrib.seq2seq.sequence_loss(logits,
                                                 input_.y,
                                                 tf.ones([self.batch_size, self.num_steps], dtype=tf.float32),
@@ -294,42 +295,41 @@ def main(_):
                         with tf.variable_scope("Model", reuse=True, initializer=initializer):
                             m_infer = SeqModel(is_training=False, config=infer_config, input_=infer_input)
 
-                hooks = [tf.train.StopAtStepHook(last_step=1000000)]
-                with tf.train.MonitoredTrainingSession(master=server.target,is_chief=(FLAGS.task_index == 0),
-                                                       checkpoint_dir="./train_logs",hooks=hooks) as sess:
-                    while not sess.should_stop():
-                        if not FLAGS.infer_path:
-                            for i in range(train_config.max_epoch):
-                                lr_decay = train_config.lr_decay ** max(i + 1 - train_config.lr_nodecay_step, 0.0)
-                                m_train.assign_lr(sess, train_config.lr * lr_decay)
-                                print("epoch: %d, learning rate is: %.3f" % (i + 1, sess.run(m_train.lr)))
-                                train_perplexity = run_epoch(sess, m_train, eval_op=m_train.train_op)
-                                print("Epoch: %d, Train perplexity: %.3f" % (i + 1, train_perplexity))
-                                valid_perplexity = run_epoch(sess, m_valid)
-                                print("Epoch: %d Valid Perplexity: %.3f" % (i + 1, valid_perplexity))
-                                sys.stdout.flush()
-                            test_perplexity = run_epoch(sess, m_test)
-                            print("Test Perplexity: %.3f" % test_perplexity)
-                            # save softmax weights
-                            softmaxs = []
-                            softmax = sess.run(m_train.norm_softmax_w)
-                            for col in softmax.T:
-                                format_col = ",".join([str(_) for _ in col])
-                                softmaxs.append(format_col)
-                            with open(FLAGS.out_softmax, 'w') as f:
-                                for idx in range(len(softmaxs)):
-                                    ss = str(idx) + "\t" + softmaxs[idx] + "\n"
-                                    f.write(ss)
+                with tf.train.MonitoredTrainingSession(master=server.target, is_chief=(FLAGS.task_index == 0),
+                                                       checkpoint_dir=FLAGS.model_path) as sess:
+                    if not FLAGS.infer_path:
+                        for i in range(train_config.max_epoch):
+                            lr_decay = train_config.lr_decay ** max(i + 1 - train_config.lr_nodecay_step, 0.0)
+                            m_train.assign_lr(sess, train_config.lr * lr_decay)
+                            print("epoch: %d, learning rate is: %.3f" % (i + 1, sess.run(m_train.lr)))
+                            train_perplexity = run_epoch(sess, m_train, eval_op=m_train.train_op)
+                            print("Epoch: %d, Train perplexity: %.3f" % (i + 1, train_perplexity))
+                            valid_perplexity = run_epoch(sess, m_valid)
+                            print("Epoch: %d Valid Perplexity: %.3f" % (i + 1, valid_perplexity))
+                            sys.stdout.flush()
+                        test_perplexity = run_epoch(sess, m_test)
+                        print("Test Perplexity: %.3f" % test_perplexity)
+                        # save softmax weights
+                        softmaxs = []
+                        softmax = sess.run(m_train.norm_softmax_w)
+                        for col in softmax.T:
+                            format_col = ",".join([str(_) for _ in col])
+                            softmaxs.append(format_col)
+                        with open(FLAGS.out_softmax, 'w') as f:
+                            for idx in range(len(softmaxs)):
+                                ss = str(idx) + "\t" + softmaxs[idx] + "\n"
+                                f.write(ss)
+                    else:
+                        latest_ckpt = tf.train.latest_checkpoint(FLAGS.model_path)
+                        sess.restore(sess, os.path.join(FLAGS.model_path, "model.ckpt"))
+                        if FLAGS.config == "title":
+                            embeddings = infer_pooling(sess, m_infer)
                         else:
-                            sess.restore(sess, os.path.join(FLAGS.model_path, "model.ckpt"))
-                            if FLAGS.config == "title":
-                                embeddings = infer_pooling(sess, m_infer)
-                            else:
-                                embeddings = infer_hidden_output(sess, m_infer)
-                            with open(FLAGS.out_embedding, "w") as f:
-                                for idx in range(len(embeddings)):
-                                    ss = infer_keys[idx] + "\t" + embeddings[idx] + "\n"
-                                    f.write(ss)
+                            embeddings = infer_hidden_output(sess, m_infer)
+                        with open(FLAGS.out_embedding, "w") as f:
+                            for idx in range(len(embeddings)):
+                                ss = infer_keys[idx] + "\t" + embeddings[idx] + "\n"
+                                f.write(ss)
 
 
 if __name__ == "__main__":
